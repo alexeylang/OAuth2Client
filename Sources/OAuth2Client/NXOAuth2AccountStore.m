@@ -448,11 +448,18 @@ NSString * const kNXOAuth2AccountStoreAccountType = @"kNXOAuth2AccountStoreAccou
     NSURL *redirectURL = [configuration objectForKey:kNXOAuth2AccountStoreConfigurationRedirectURL];
     NSURL *preparedURL = [client authorizationURLWithRedirectURL:redirectURL];
     
+    if ( self.delegate )
+    {
+        [self.delegate accountStore:self openURL:preparedURL withAccountType:accountType];
+    }
+    else
+    {
 #if TARGET_OS_IPHONE
         [[UIApplication sharedApplication] openURL:preparedURL];
 #else
         [[NSWorkspace sharedWorkspace] openURL:preparedURL];
 #endif
+    }
 }
 
 - (void)oauthClientDidGetAccessToken:(NXOAuth2Client *)client;

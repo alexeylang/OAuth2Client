@@ -57,6 +57,17 @@ typedef NSArray *(^NXOAuth2TrustedCertificatesHandler)(NSString *hostname);
 typedef void(^NXOAuth2PreparedAuthorizationURLHandler)(NSURL *preparedURL);
 
 
+#pragma mark NXOAuth2AccountStoreOpenURLDelegate
+
+@class NXOAuth2AccountStore;
+@protocol NXOAuth2AccountStoreOpenURLDelegate <NSObject>
+
+@required
+- (BOOL)accountStore:(NXOAuth2AccountStore *)accountStore openURL:(NSURL *)url withAccountType:(NSString *)accountType;
+
+@end
+
+
 #pragma mark -
 
 @interface NXOAuth2AccountStore : NSObject {
@@ -69,6 +80,7 @@ typedef void(^NXOAuth2PreparedAuthorizationURLHandler)(NSURL *preparedURL);
 }
 
 + (id)sharedStore;
+@property(nonatomic, readwrite, assign) id <NXOAuth2AccountStoreOpenURLDelegate> delegate;
 
 #pragma mark Accessors
 
