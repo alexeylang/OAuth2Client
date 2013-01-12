@@ -37,9 +37,18 @@
 
 - (NSString *)nxoauth2_valueForQueryParameterKey:(NSString *)key;
 {
+    NSString *result = nil;
     NSString *queryString = [self query];
     NSDictionary *parameters = [queryString nxoauth2_parametersFromEncodedQueryString];
-    return [parameters objectForKey:key];
+    result = [parameters objectForKey:key];
+
+    if ( !result )
+    {
+        NSString *hashString = [self fragment];
+        NSDictionary *hashParameters = [hashString nxoauth2_parametersFromEncodedQueryString];
+        result = [hashParameters objectForKey:key];
+    }
+    return result;
 }
 
 - (NSURL *)nxoauth2_URLWithoutQueryString;
@@ -50,6 +59,7 @@
 - (NSString *)nxoauth2_URLStringWithoutQueryString;
 {
     NSArray *parts = [[self absoluteString] componentsSeparatedByString:@"?"];
+    parts = [[parts objectAtIndex:0] componentsSeparatedByString:@"#"];
     return [parts objectAtIndex:0];
 }
 
