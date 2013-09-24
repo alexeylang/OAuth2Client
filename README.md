@@ -31,6 +31,7 @@ Getting the sources is as easy as doing a:
     * Add `$(SRCROOT)/path/to/OAuth2Client` _Header Search Paths_, set as _recursive_
     * Add `-ObjC` to _Other Linker Flags_
 * `#import "NXOAuth2.h"`
+* add the Security.framework as a build dependency
 
 #### Desktop Mac projects
 
@@ -51,7 +52,7 @@ installation steps automatically.
 
 In order to install the library this way add the following line to your `Podfile`:
 
-```dependency 'NXOAuth2Client','1.2.2'```
+```pod 'NXOAuth2Client', '~> 1.2.2'```
 
 and run the following command `pod install`.
 
