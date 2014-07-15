@@ -37,13 +37,15 @@
 + (void)performMethod:(NSString *)aMethod
            onResource:(NSURL *)aResource
       usingParameters:(NSDictionary *)someParameters
+          httpHeaders:(NSDictionary *)httpHeaders
           withAccount:(NXOAuth2Account *)anAccount
   sendProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)progressHandler
       responseHandler:(NXOAuth2ConnectionResponseHandler)responseHandler;
 {
     NXOAuth2Request *request = [[NXOAuth2Request alloc] initWithResource:aResource
                                                                   method:aMethod
-                                                              parameters:someParameters];
+                                                              parameters:someParameters
+                                                                 headers:httpHeaders];
     request.account = anAccount;
     [request performRequestWithSendingProgressHandler:progressHandler responseHandler:responseHandler];
 }
@@ -51,12 +53,13 @@
 
 #pragma mark Lifecycle
 
-- (id)initWithResource:(NSURL *)aResource method:(NSString *)aMethod parameters:(NSDictionary *)someParameters;
+- (id)initWithResource:(NSURL *)aResource method:(NSString *)aMethod parameters:(NSDictionary *)someParameters headers:(NSDictionary *)someHeaders
 {
     self = [super init];
     if (self) {
         resource = aResource;
         parameters = someParameters;
+        headers = someHeaders;
         requestMethod = aMethod;
     }
     return self;
@@ -66,6 +69,7 @@
 #pragma mark Accessors
 
 @synthesize parameters;
+@synthesize headers;
 @synthesize resource;
 @synthesize requestMethod;
 @synthesize account;
@@ -81,6 +85,8 @@
     
     [request setHTTPMethod:self.requestMethod];
     
+    [request setAllHTTPHeaderFields:self.headers];
+
     [self applyParameters:self.parameters onRequest:request];
     
     if (self.account.oauthClient.userAgent && ![request valueForHTTPHeaderField:@"User-Agent"]) {
