@@ -225,14 +225,19 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
         && [httpMethod caseInsensitiveCompare:@"PUT"] != NSOrderedSame) {
         aRequest.URL = [aRequest.URL nxoauth2_URLByAddingParameters:parameters];
     } else {
-        NSInputStream *postBodyStream = [[NXOAuth2PostBodyStream alloc] initWithParameters:parameters];
-        
-        NSString *contentType = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", [(NXOAuth2PostBodyStream *)postBodyStream boundary]];
-        NSString *contentLength = [NSString stringWithFormat:@"%lld", [(NXOAuth2PostBodyStream *)postBodyStream length]];
-        [aRequest setValue:contentType forHTTPHeaderField:@"Content-Type"];
-        [aRequest setValue:contentLength forHTTPHeaderField:@"Content-Length"];
-        
-        [aRequest setHTTPBodyStream:postBodyStream];
+        NSString *contentType = [aRequest valueForHTTPHeaderField:@"Content-Type"];
+        if ([contentType caseInsensitiveCompare:@"application/json"] == NSOrderedSame) {
+            [aRequest setHTTPBody:[NSJSONSerialization dataWithJSONObject:parameters options:(NSJSONWritingOptions)0 error:NULL]];
+        } else {
+            NSInputStream *postBodyStream = [[NXOAuth2PostBodyStream alloc] initWithParameters:parameters];
+
+            NSString *contentType = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", [(NXOAuth2PostBodyStream *)postBodyStream boundary]];
+            NSString *contentLength = [NSString stringWithFormat:@"%lld", [(NXOAuth2PostBodyStream *)postBodyStream length]];
+            [aRequest setValue:contentType forHTTPHeaderField:@"Content-Type"];
+            [aRequest setValue:contentLength forHTTPHeaderField:@"Content-Length"];
+
+            [aRequest setHTTPBodyStream:postBodyStream];
+        }
     }
 }
 
