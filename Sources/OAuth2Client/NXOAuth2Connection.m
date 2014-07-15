@@ -226,9 +226,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
         aRequest.URL = [aRequest.URL nxoauth2_URLByAddingParameters:parameters];
     } else {
         NSString *contentType = [aRequest valueForHTTPHeaderField:@"Content-Type"];
-        if ([contentType caseInsensitiveCompare:@"application/json"] == NSOrderedSame) {
-            [aRequest setHTTPBody:[NSJSONSerialization dataWithJSONObject:parameters options:(NSJSONWritingOptions)0 error:NULL]];
-        } else {
+        if (!contentType || [contentType caseInsensitiveCompare:@"multipart/form-data"] == NSOrderedSame) {
             NSInputStream *postBodyStream = [[NXOAuth2PostBodyStream alloc] initWithParameters:parameters];
 
             NSString *contentType = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", [(NXOAuth2PostBodyStream *)postBodyStream boundary]];
@@ -237,6 +235,8 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
             [aRequest setValue:contentLength forHTTPHeaderField:@"Content-Length"];
 
             [aRequest setHTTPBodyStream:postBodyStream];
+        } else if ([contentType caseInsensitiveCompare:@"application/json"] == NSOrderedSame) {
+            [aRequest setHTTPBody:[NSJSONSerialization dataWithJSONObject:parameters options:(NSJSONWritingOptions)0 error:NULL]];
         }
     }
 }
