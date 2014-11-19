@@ -140,7 +140,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 {
     if (sendConnectionDidEndNotification) [[NSNotificationCenter defaultCenter] postNotificationName:NXOAuth2ConnectionDidEndNotification object:self];
     sendConnectionDidEndNotification = NO;
-    
+
     [connection cancel];
     [client removeConnectionFromWaitingQueue:self];
 }
@@ -161,16 +161,16 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
     NSString *oauthAuthorizationHeader = nil;
     if (client.accessToken &&
         ![[requestParameters objectForKey:@"grant_type"] isEqualToString:@"refresh_token"]) {
-        
+
         // if token is expired don't bother starting this connection.
         NSDate *tenSecondsAgo = [NSDate dateWithTimeIntervalSinceNow:(-10)];
         NSDate *tokenExpiresAt = client.accessToken.expiresAt;
-        if ([tenSecondsAgo earlierDate:tokenExpiresAt] == tokenExpiresAt) {
+        if (client.accessToken.refreshToken && [tenSecondsAgo earlierDate:tokenExpiresAt] == tokenExpiresAt) {
             [self cancel];
             [client refreshAccessTokenAndRetryConnection:self];
             return nil;
         }
-        
+
         NSString *tokenType = client.accessToken.tokenType;
         if (tokenType == nil) {
             tokenType = client.tokenType;
@@ -178,32 +178,32 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
         if (tokenType == nil) {
             tokenType = @"OAuth";
         }
-        
+
         oauthAuthorizationHeader = [NSString stringWithFormat:@"%@ %@", tokenType, client.accessToken.accessToken];
     }
-    
+
     NSMutableURLRequest *startRequest = [request mutableCopy];
     [self applyParameters:requestParameters onRequest:startRequest];
-    
+
     if (oauthAuthorizationHeader) {
         [startRequest setValue:oauthAuthorizationHeader forHTTPHeaderField:@"Authorization"];
     }
-    
+
     if (client.userAgent && ![startRequest valueForHTTPHeaderField:@"User-Agent"]) {
         [startRequest setValue:client.userAgent forHTTPHeaderField:@"User-Agent"];
     }
-    
+
     if (client.acceptType) {
         [startRequest setValue:client.acceptType forHTTPHeaderField:@"Accept"];
     }
-    
+
     NSURLConnection *aConnection = [[NSURLConnection alloc] initWithRequest:startRequest delegate:self startImmediately:NO];    // don't start yet
     [aConnection scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];    // let's first schedule it in the current runloop. (see http://github.com/soundcloud/cocoa-api-wrapper/issues#issue/2 )
     [aConnection start];    // now start
-    
+
     if (!sendConnectionDidEndNotification) [[NSNotificationCenter defaultCenter] postNotificationName:NXOAuth2ConnectionDidStartNotification object:self];
     sendConnectionDidEndNotification = YES;
-    
+
     return aConnection;
 }
 
@@ -219,28 +219,43 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 - (void)applyParameters:(NSDictionary *)parameters onRequest:(NSMutableURLRequest *)aRequest;
 {
     if (!parameters) return;
-    
+
     NSString *httpMethod = [aRequest HTTPMethod];
     if ([httpMethod caseInsensitiveCompare:@"POST"] != NSOrderedSame
         && [httpMethod caseInsensitiveCompare:@"PUT"] != NSOrderedSame) {
+
         aRequest.URL = [aRequest.URL nxoauth2_URLByAddingParameters:parameters];
+
     } else {
         NSString *contentType = [aRequest valueForHTTPHeaderField:@"Content-Type"];
-        if (!contentType || [contentType caseInsensitiveCompare:@"multipart/form-data"] == NSOrderedSame) {
+
+        if (!contentType || [contentType isEqualToString:@"multipart/form-data"]) {
+
+            // sends the POST/PUT request as multipart/form-data as default
+
             NSInputStream *postBodyStream = [[NXOAuth2PostBodyStream alloc] initWithParameters:parameters];
 
-            NSString *contentType = [NSString stringWithFormat:@"multipart/form-data; boundary=%@", [(NXOAuth2PostBodyStream *)postBodyStream boundary]];
+            contentType = [NSString stringWithFormat:@"multipart/form-data; boundary=%@",[(NXOAuth2PostBodyStream *)postBodyStream boundary]];
             NSString *contentLength = [NSString stringWithFormat:@"%lld", [(NXOAuth2PostBodyStream *)postBodyStream length]];
             [aRequest setValue:contentType forHTTPHeaderField:@"Content-Type"];
             [aRequest setValue:contentLength forHTTPHeaderField:@"Content-Length"];
 
             [aRequest setHTTPBodyStream:postBodyStream];
-        } else if ([contentType caseInsensitiveCompare:@"application/json"] == NSOrderedSame) {
+
+        } else if ([contentType isEqualToString:@"application/x-www-form-urlencoded"]) {
+
+            // sends the POST/PUT request as application/x-www-form-urlencoded
+
+            NSString *query = [[aRequest.URL nxoauth2_URLByAddingParameters:parameters] query];
+            [aRequest setHTTPBody:[query dataUsingEncoding:NSUTF8StringEncoding]];
+
+        } else if ([contentType isEqualToString:@"application/json"]) {
+
             [aRequest setHTTPBody:[NSJSONSerialization dataWithJSONObject:parameters options:(NSJSONWritingOptions)0 error:NULL]];
+
         }
     }
 }
-
 
 - (BOOL)trustsAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
                           forHostname:(NSString *)hostname
@@ -249,16 +264,16 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
     if (trustMode & NXOAuth2TrustModeAnyCertificate) {
         return YES;
     }
-    
+
     if (trustMode & NXOAuth2TrustModeSystem) {
         SecTrustResultType trustEvalResult = kSecTrustResultInvalid;
         OSStatus ossTrust = SecTrustEvaluate(challenge.protectionSpace.serverTrust, &trustEvalResult);
-        
+
         if (ossTrust != errSecSuccess) {
             NSLog(@"Trust evaluation failed for domain %@. Rejecting cert.", hostname);
             return NO;
         }
-        
+
         // TODO: The result might also be kSecTrustResultConfirm
         // But to be safe we ignore this for now
         // if it is kSecTrustResultConfirm, there could be another delegate
@@ -268,13 +283,13 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
             return YES;
         }
     }
-    
-    
+
+
     if (trustMode & NXOAuth2TrustModeSpecificCertificate) {
         NSAssert([self.trustDelegate respondsToSelector:@selector(connection:trustedCertificatesForHostname:)],
                  @"For NXOAuth2TrustModeSpecificCertificate the delegate needs to implement oauthConnection:trustedCertificatesDERDataForHostname:");
         NSArray *trustedCerts = [self.trustDelegate connection:self trustedCertificatesForHostname:hostname];
-        
+
         for (NSData* trustedCert in trustedCerts) {
             if ([self isServerCertificateForAuthenticationChallenge:challenge
                                                         andHostname:hostname
@@ -283,7 +298,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
             }
         }
     }
-    
+
     return NO;
 }
 
@@ -295,61 +310,61 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
     if (derCertData == nil) {
         return NO;
     }
-    
+
     SecTrustRef serverTrust = [[challenge protectionSpace] serverTrust];
     SecCertificateRef anchorCert = SecCertificateCreateWithData(NULL,(__bridge CFDataRef)derCertData);
-    
+
     if(anchorCert == nil) {
         return NO;
     }
-    
+
     CFArrayRef allTrustedCert = (__bridge CFArrayRef)[NSArray arrayWithObject:(__bridge id)anchorCert];
-    
+
     CFRelease(anchorCert);
-    
+
     SecTrustSetAnchorCertificates(serverTrust, allTrustedCert);
     SecTrustSetAnchorCertificatesOnly(serverTrust, YES);
-    
+
     SecTrustResultType checkResult;
     OSStatus ossTrust = SecTrustEvaluate(serverTrust, &checkResult);
-    
+
     if (ossTrust != errSecSuccess) {
         return NO;
     }
-    
+
     if (checkResult == kSecTrustResultProceed || checkResult == kSecTrustResultUnspecified) {
         return YES;
     } else if (checkResult == kSecTrustResultRecoverableTrustFailure) {
         // In this case me check if any of the certs is our trusted cert.
-        
+
         OSStatus errGetTrustResult = noErr;
         NSMutableArray *certificates = [NSMutableArray array];
-        
+
 #if TARGET_OS_IPHONE || MAC_OS_X_VERSION_10_7
-        
+
         // The iOS/10.7+ way of getting the certs.
         for (CFIndex index = 0; index < SecTrustGetCertificateCount(serverTrust); index++) {
             SecCertificateRef certificate = SecTrustGetCertificateAtIndex(serverTrust, index);
             [certificates addObject:(__bridge id)certificate];
         }
-        
+
 #else
-        
+
         // OS X way of getting to the certs.
         CSSM_TP_APPLE_EVIDENCE_INFO *statusChain;
         CFArrayRef cfCertificates;
         errGetTrustResult = SecTrustGetResult(serverTrust, &checkResult, &cfCertificates, &statusChain);
         certificates = (__bridge NSArray*)cfCertificates;
-        
+
 #endif
         if (errGetTrustResult == noErr) {
             // find if any cert in the chain matches the provided cert.
             for (id certificate in certificates) {
                 CFDataRef certData = SecCertificateCopyData((__bridge SecCertificateRef)certificate);
-                
+
                 NSString *certificateChecksum = [(__bridge_transfer NSData *)certData nx_SHA1Hexdigest];
                 NSString *anchorCertChecksum = [derCertData nx_SHA1Hexdigest];
-                
+
                 if ([anchorCertChecksum isEqualToString:certificateChecksum]) {
                     return YES;
                 }
@@ -381,9 +396,9 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 #if (NXOAuth2ConnectionDebug)
     NSLog(@"%.0fms (RESP) - %@", -[startDate timeIntervalSinceNow]*1000.0, [self descriptionForRequest:request]);
 #endif
-    
+
     response = theResponse;
-    
+
     if (savesData) {
         if (!data) {
             data = [[NSMutableData alloc] init];
@@ -391,7 +406,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
             [data setLength:0];
         }
     }
-    
+
     NSString *authenticateHeader = nil;
     if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
         NSDictionary *headerFields = [(NSHTTPURLResponse *)response allHeaderFields];
@@ -433,10 +448,10 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 #if (NXOAuth2ConnectionDebug)
     NSLog(@"%.0fms (SUCC) - %@", -[startDate timeIntervalSinceNow]*1000.0, [self descriptionForRequest:request]);
 #endif
-    
+
     if (sendConnectionDidEndNotification) [[NSNotificationCenter defaultCenter] postNotificationName:NXOAuth2ConnectionDidEndNotification object:self];
     sendConnectionDidEndNotification = NO;
-    
+
     if(self.statusCode < 400) {
         if ([delegate respondsToSelector:@selector(oauthConnection:didFinishWithData:)]) {
             [delegate oauthConnection:self didFinishWithData:data];
@@ -460,7 +475,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
                 client.accessToken = nil;
             }
         }
-        
+
         NSString *localizedError = [NSString stringWithFormat:NSLocalizedString(@"HTTP Error: %d", @"NXOAuth2HTTPErrorDomain description"), self.statusCode];
         NSDictionary *errorUserInfo = [NSDictionary dictionaryWithObject:localizedError forKey:NSLocalizedDescriptionKey];
         NSError *error = [NSError errorWithDomain:NXOAuth2HTTPErrorDomain
@@ -478,10 +493,10 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 #if (NXOAuth2ConnectionDebug)
     NSLog(@"%.0fms (FAIL) - %@ (%@ %i)", -[startDate timeIntervalSinceNow]*1000.0, [self descriptionForRequest:request], [error domain], [error code]);
 #endif
-    
+
     if (sendConnectionDidEndNotification) [[NSNotificationCenter defaultCenter] postNotificationName:NXOAuth2ConnectionDidEndNotification object:self];
     sendConnectionDidEndNotification = NO;
-    
+
     if ([delegate respondsToSelector:@selector(oauthConnection:didFailWithError:)]) {
         [delegate oauthConnection:self didFailWithError:error];
     }
@@ -490,29 +505,29 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 
 - (NSURLRequest *)connection:(NSURLConnection *)aConnection willSendRequest:(NSURLRequest *)aRequest redirectResponse:(NSURLResponse *)aRedirectResponse;
 {
-    
+
     if (!aRedirectResponse) {
 #if (NXOAuth2ConnectionDebug)
         NSLog(@"%.0fms (WILL) - %@", -[startDate timeIntervalSinceNow]*1000.0, [self descriptionForRequest:aRequest]);
 #endif
         return aRequest; // if not redirecting do nothing
     }
-    
+
     if ([delegate respondsToSelector:@selector(oauthConnection:didReceiveRedirectToURL:)]) {
         [delegate oauthConnection:self didReceiveRedirectToURL:aRequest.URL];
     }
-    
+
 #if (NXOAuth2ConnectionDebug)
     NSLog(@"%.0fms (REDI) - %@ > %@", -[startDate timeIntervalSinceNow]*1000.0, aRedirectResponse.URL.absoluteString, [self descriptionForRequest:aRequest]);
 #endif
     BOOL hostChanged = [aRequest.URL.host caseInsensitiveCompare:aRedirectResponse.URL.host] != NSOrderedSame;
-    
+
     BOOL schemeChanged = [aRequest.URL.scheme caseInsensitiveCompare:aRedirectResponse.URL.scheme] != NSOrderedSame;
     BOOL schemeChangedToHTTPS = schemeChanged && ([aRequest.URL.scheme caseInsensitiveCompare:@"https"] == NSOrderedSame);
-    
+
     NSMutableURLRequest *mutableRequest = [aRequest mutableCopy];
     mutableRequest.HTTPMethod = request.HTTPMethod;
-    
+
     if (hostChanged || (schemeChanged && !schemeChangedToHTTPS)) {
         [mutableRequest setValue:nil forHTTPHeaderField:@"Authorization"]; // strip Authorization information
         return mutableRequest;
@@ -530,7 +545,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
     if ([delegate respondsToSelector:@selector(oauthConnection:didSendBytes:ofTotal:)]) {
         [delegate oauthConnection:self didSendBytes:totalBytesWritten ofTotal:totalBytesExpectedToWrite];
     }
-    
+
     if (sendingProgressHandler) sendingProgressHandler(totalBytesWritten, totalBytesExpectedToWrite);
 }
 
@@ -548,7 +563,7 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
 {
     if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
         NSString *hostname = challenge.protectionSpace.host;
-        
+
         NXOAuth2TrustMode effectiveTrustMode = NXOAuth2TrustModeSystem;
         if ([self.trustDelegate respondsToSelector:@selector(connection:trustModeForHostname:)]) {
             effectiveTrustMode = [self.trustDelegate connection:self trustModeForHostname:hostname];
@@ -556,16 +571,16 @@ sendingProgressHandler:(NXOAuth2ConnectionSendingProgressHandler)aSendingProgres
         BOOL shouldTrustCerificate = [self trustsAuthenticationChallenge:challenge
                                                              forHostname:hostname
                                                            withTrustMode:effectiveTrustMode];
-        
+
         if (shouldTrustCerificate) {
             [challenge.sender useCredential:[NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]
                  forAuthenticationChallenge:challenge];
         } else {
             [challenge.sender cancelAuthenticationChallenge:challenge];
         }
-        
+
     } else {
-        
+
         if ( [challenge previousFailureCount] == 0 ) {
             [[challenge sender] continueWithoutCredentialForAuthenticationChallenge:challenge];
         } else {
